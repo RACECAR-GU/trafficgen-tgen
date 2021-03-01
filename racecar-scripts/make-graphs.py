@@ -42,9 +42,7 @@ def silent_mkdir( dir ):
 
 def generate_protocol( args, proto_num ):
 
-    # TODO: basically, everything hard-coded should really be a configurable option
-
-    # a client
+    # TODO: everything hard-coded should really be a configurable option
     num_streams = random.randint(1,5)          # TODO
     G_client = nx.DiGraph()
     G_client.add_node("start", time="1 second", heartbeat="1 second", loglevel="message", peers=args.peer)
@@ -132,7 +130,7 @@ def main():
         generate_protocol( args, i )
 
     if args.run_tgen is True:
-        logging.warning( "you should run the noroot_tcpdump.sh script to ensure this user can ")
+        logging.warning( "you should run the noroot_tcpdump.sh script to ensure this user can actually run tcpdump")
         for i in range(args.number_of_protocols):
             logging.info( 'running tgen for protocol %d' % i )
             run_tgen( args, i )
