@@ -1,8 +1,6 @@
 """
 A program to generate a bunch of maybe plausible looking different protocols
 
-MAJOR TODOs:
-* add better traffic shaping and delays
 """
 
 import sys
@@ -22,7 +20,7 @@ def parse_args():
     parser.add_argument( '-g', '--outputdir', dest='outputdir', default='graphs/', help='directory to place graph output files')
     parser.add_argument( '-c', '--capdir', dest='capdir', default='captures/', help='directory to place pcap files')
     parser.add_argument( '-n', '--numprotos', dest='number_of_protocols', type=int, default=10, help='number of protocols')
-    parser.add_argument( '-s', '--randseed', dest='seed', type=int, default=time.time(), help='RNG seed (not cryptographically secure)')
+    parser.add_argument( '-s', '--randseed', dest='seed', type=int, required=True, help='RNG seed (not cryptographically secure)')
     parser.add_argument( '-p', '--peer', dest='peer', required=True, help='host:port to connect to')
     parser.add_argument( '-t', '--tgen', dest='tgen', default='../build/src/tgen', help='path to tgen')
     parser.add_argument( '-r', '--run', dest='run_tgen', default=False, action='store_true', help='run tgen')
@@ -69,39 +67,41 @@ def generate_packetflow_markov_model( args, protocol_number ):
     G.add_edge('s2', 's2', type='transition', weight=(1-switch_bias_receiving))   # don't switch
 
     # define some emissions for sending and receiving states
-    # TODO: random the delays; remove hardcoded stuff
-    G.add_edge('s1', 'o1', type='emission', weight=1.0, distribution='exponential', param_rate=100.0)
-    G.add_edge('s2', 'o2', type='emission', weight=1.0, distribution='exponential', param_rate=100.0)
+    G.add_edge('s1', 'o1', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=100)
+    G.add_edge('s2', 'o2', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=100)
     
     # add some probability of ending
-    #G.add_edge('s1', 'o3', type='emission', weight=0.01, distribution='uniform', param_low=50, param_high=500)
-    #G.add_edge('s2', 'o3', type='emission', weight=0.03, distribution='uniform', param_low=50, param_high=500)
+    #G.add_edge('s1', 'o3', type='emission', weight=0.001, distribution='uniform', param_low=50, param_high=100)
+    #G.add_edge('s2', 'o3', type='emission', weight=0.001, distribution='uniform', param_low=50, param_high=100)
     
-    #G.add_edge('s1', 's3', type='transition', weight=0.0001)
-    #G.add_edge('s2', 's3', type='transition', weight=0.0001)
-    #G.add_edge('s3', 's3', type='transition', weight=1.0)
-    #G.add_edge('s3', 'o3', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=500)
+    # other non-successful attempts to get to a stop-sending state
+    G.add_edge('s1', 's3', type='transition', weight=0.0001)
+    G.add_edge('s2', 's3', type='transition', weight=0.0001)
+    G.add_edge('s3', 's3', type='transition', weight=1.0)
+    G.add_edge('s3', 'o3', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=500)
 
     nx.write_graphml(G, f"{args.outputdir}/protocol{protocol_number}.tgenrc.graphml" )
 
 
 
 def generate_client_protocol( args, number_of_protocols ):
-    logging.info( 'creating the client, with %d protocols' % number_of_protocols )
-    G = nx.DiGraph()
+    logging.info( f'creating {number_of_protocols} client protocols' )
 
-    G.add_node("start", time="1 second", heartbeat="1 second", loglevel="message", peers=args.peer)
-    G.add_node("pause", time="5 seconds")
     for i in range(number_of_protocols):
+        G = nx.DiGraph()
+
+        G.add_node("start", time="250 ms", heartbeat="1 second", loglevel="message", peers=args.peer)
         generate_packetflow_markov_model( args, i )
-        G.add_node(f"stream{i}", packetmodelpath=f"{args.outputdir}/protocol{i}.tgenrc.graphml", packetmodelmode="graphml", timeout="10 minutes", stallout="5 minutes")
-    
-    G.add_edge("start", "pause")
-    for i in range(number_of_protocols):
-        G.add_edge("pause", f"stream{i}", weight="1.0")     # TODO: wouldn't there be a large outdegree from single pause node?
-        G.add_edge(f"stream{i}", "pause")
+        G.add_node("stream", 
+            packetmodelpath=f"{args.outputdir}/protocol{i}.tgenrc.graphml", 
+            packetmodelmode="path", 
+            timeout="10 minutes", 
+            stallout="5 minutes",
+            markovmodelseed=f"{random.randrange(2147483647)}"
+        )
+        G.add_edge("start", "stream")
 
-    nx.write_graphml(G, "%s/client-unclass.tgenrc.graphml" % args.outputdir)
+        nx.write_graphml( G, f"{args.outputdir}/client-unclass.proto_{i}.tgenrc.graphml" )
 
 
 
