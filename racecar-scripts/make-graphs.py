@@ -10,13 +10,13 @@ import logging
 import os
 import random
 import time
-import scapy
 import signal
 import subprocess
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument( '-e', '--expname', dest='expname', required=True, help='experiment name (don\'t include spaces)')
     parser.add_argument( '-g', '--outputdir', dest='outputdir', default='graphs/', help='directory to place graph output files')
     parser.add_argument( '-c', '--capdir', dest='capdir', default='captures/', help='directory to place pcap files')
     parser.add_argument( '-n', '--numprotos', dest='number_of_protocols', type=int, default=10, help='number of protocols')
@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument( '-r', '--run', dest='run_tgen', default=False, action='store_true', help='run tgen')
     parser.add_argument( '-R', '--runs', dest='runs', type=int, default=1, help='number of iterations of each protocol to run')
     parser.add_argument( '-i', '--capinterface', dest='cap_interface', default="eno1", help='interface to capture packets')
+    parser.add_argument( '-S', '--proxy', dest='socksproxy', default=False, action='store_true', help='proxy via SOCKS (localhost:9999)' )
     args = parser.parse_args()
     return args
 
@@ -43,6 +44,8 @@ def generate_packetflow_markov_model( args, protocol_number ):
 
     switch_bias_sending = random.uniform(0.01,0.3)
     switch_bias_receiving = random.uniform(0.01,0.3)
+    lamb = 1.0/0.05              # 1 over the desired mean
+    exit_prob = min(random.expovariate(lamb),1.0)
 
     logging.info( f'send/recv switch biases are {switch_bias_sending} and {switch_bias_receiving}')
 
@@ -67,62 +70,69 @@ def generate_packetflow_markov_model( args, protocol_number ):
     G.add_edge('s2', 's2', type='transition', weight=(1-switch_bias_receiving))   # don't switch
 
     # define some emissions for sending and receiving states
-    G.add_edge('s1', 'o1', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=100)
-    G.add_edge('s2', 'o2', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=100)
+    G.add_edge('s1', 'o1', type='emission', weight=1.0, distribution='uniform', param_low=100, param_high=500)
+    G.add_edge('s2', 'o2', type='emission', weight=1.0, distribution='uniform', param_low=100, param_high=500)
     
-    # add some probability of ending
-    #G.add_edge('s1', 'o3', type='emission', weight=0.001, distribution='uniform', param_low=50, param_high=100)
-    #G.add_edge('s2', 'o3', type='emission', weight=0.001, distribution='uniform', param_low=50, param_high=100)
-    
-    # other non-successful attempts to get to a stop-sending state
-    G.add_edge('s1', 's3', type='transition', weight=0.0001)
-    G.add_edge('s2', 's3', type='transition', weight=0.0001)
+    # let's get to an exit state with some probability
+    G.add_edge('s1', 's3', type='transition', weight=exit_prob)
+    G.add_edge('s2', 's3', type='transition', weight=exit_prob)
     G.add_edge('s3', 's3', type='transition', weight=1.0)
     G.add_edge('s3', 'o3', type='emission', weight=1.0, distribution='uniform', param_low=50, param_high=500)
 
-    nx.write_graphml(G, f"{args.outputdir}/protocol{protocol_number}.tgenrc.graphml" )
+    nx.write_graphml(G, f"{args.outputdir}/{args.expname}_protocol{protocol_number}.tgenrc.graphml" )
 
 
 
-def generate_client_protocol( args, number_of_protocols ):
-    logging.info( f'creating {number_of_protocols} client protocols' )
+def generate_client_protocol( args ):
+    logging.info( f'creating {args.number_of_protocols} client protocols' )
 
-    for i in range(number_of_protocols):
-        G = nx.DiGraph()
+    if args.socksproxy is False or args.socksproxy is None:
+        proxy = ""
+    else:
+        proxy = "127.0.0.1:9999"
 
-        G.add_node("start", time="250 ms", heartbeat="1 second", loglevel="message", peers=args.peer)
-        generate_packetflow_markov_model( args, i )
-        G.add_node("stream", 
-            packetmodelpath=f"{args.outputdir}/protocol{i}.tgenrc.graphml", 
-            packetmodelmode="path", 
-            timeout="10 minutes", 
-            stallout="5 minutes",
-            markovmodelseed=f"{random.randrange(2147483647)}"
-        )
-        G.add_edge("start", "stream")
+    for i in range(args.number_of_protocols):
+        generate_packetflow_markov_model( args, i )     # generate MM for this protocol
+        for r in range(args.runs):
+            G = nx.DiGraph()
 
-        nx.write_graphml( G, f"{args.outputdir}/client-unclass.proto_{i}.tgenrc.graphml" )
+            G.add_node("start", time="250 ms", heartbeat="1 second", loglevel="message", peers=args.peer)
+            G.add_node("stream", 
+                packetmodelpath=f"{args.outputdir}/{args.expname}_protocol{i}.tgenrc.graphml", 
+                packetmodelmode="path",
+                markovmodelseed=f"{random.randrange(2147483647)}",
+                socksproxy=proxy
+            )
+            G.add_edge("start", "stream")
+            G.add_node("end", count="1")
+            G.add_edge("stream", "end")
+
+            nx.write_graphml( G, f"{args.outputdir}/{args.expname}_client-unclass.proto_{i}.run_{r}.tgenrc.graphml" )
 
 
 
 def run_tgen( args ):
     for run in range(args.runs):
-        logging.debug( "starting pcap")
-        proc = subprocess.Popen( [
-            '/usr/sbin/tcpdump',
-            '-n', 
-            '-i', args.cap_interface,
-            '-w', '%s/capture-proto-run-%d.pcap' % (args.capdir,run)
-            ] )
-        logging.debug( "starting tgen" )
-        os.system( "%s %s" % (
-            args.tgen,
-            os.path.abspath( f"{args.outputdir}/client-unclass.tgenrc.graphml" )
-        ))
-        logging.debug("stopping tgen and waiting 2 seconds")
-        time.sleep(1.5)
-        proc.kill()
-        time.sleep(0.5)
+        for proto in range(args.number_of_protocols):
+            logging.debug( "starting pcap")
+            proc = subprocess.Popen( [
+                '/usr/sbin/tcpdump',
+                '-n', 
+                '-i', args.cap_interface,
+                '-w', f'{args.capdir}/{args.expname}_capture-proto_{proto}-run_{run}.pcap'
+                ] )
+            logging.debug( "starting tgen" )
+            os.system( "%s %s" % (
+                args.tgen,
+                os.path.abspath( f"{args.outputdir}/{args.expname}_client-unclass.proto_{proto}.run_{run}.tgenrc.graphml" )
+            ))
+            logging.debug("stopping tgen and waiting 2 seconds")
+            time.sleep(1.5)
+            proc.terminate()
+            time.sleep(0.4)
+            proc.kill()         # really make sure it's dead
+            time.sleep(0.1)
+
 
 
 def main():
@@ -136,7 +146,6 @@ def main():
     if args.capdir is not None:
         silent_mkdir( args.capdir )
     
-
     # a simple server
     logging.info( 'creating the server protocol')
     G_server = nx.DiGraph()
@@ -146,7 +155,7 @@ def main():
         "%s/proto-server-stream.tgenrc.graphml" % args.outputdir 
     )
 
-    generate_client_protocol( args, args.number_of_protocols )
+    generate_client_protocol( args )
 
     if args.run_tgen is True:
         logging.warning( "you should run the noroot_tcpdump.sh script to ensure this user can actually run tcpdump")
