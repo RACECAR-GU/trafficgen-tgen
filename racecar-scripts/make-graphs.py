@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument( '-R', '--runs', dest='runs', type=int, default=1, help='number of iterations of each protocol to run')
     parser.add_argument( '-i', '--capinterface', dest='cap_interface', default="eno1", help='interface to capture packets')
     parser.add_argument( '-S', '--proxy', dest='socksproxy', default=False, action='store_true', help='proxy via SOCKS (localhost:9999)' )
+    parser.add_argument( '-5', '--obfs5', dest='number_of_obfs5', type=int, help='number of obfs5 instances (assumes peer ports increase by 1 for each instance)' )
     args = parser.parse_args()
     return args
 
@@ -96,7 +97,13 @@ def generate_client_protocol( args ):
         for r in range(args.runs):
             G = nx.DiGraph()
 
-            G.add_node("start", time="250 ms", heartbeat="1 second", loglevel="message", peers=args.peer)
+            peer = args.peer
+            if args.number_of_obfs5 is not None and args.number_of_obfs5 > 0:
+                host,port = peer.split(':')
+                port = int(port) + (i % args.number_of_obfs5)
+                peer = f'{host}:{port}'
+
+            G.add_node("start", time="250 ms", heartbeat="1 second", loglevel="message", peers=peer)
             G.add_node("stream", 
                 packetmodelpath=f"{args.outputdir}/{args.expname}_protocol{i}.tgenrc.graphml", 
                 packetmodelmode="path",
