@@ -1,3 +1,6 @@
 graphs/
 env/
+captures/*.log
+state_obfs5*
+log_*.log
 captures/
