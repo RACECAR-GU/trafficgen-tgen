@@ -1,11 +1,5 @@
 #!/bin/bash
 
-echo """
-THIS SCRIPT ISN'T FUNCTIONAL YET.
-
-DON'T USE IT.
-"""
-
 
 # defaults
 start_localhost_port="8888"
