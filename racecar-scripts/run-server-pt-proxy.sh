@@ -2,7 +2,7 @@
 
 
 # defaults
-start_localhost_port="8888"
+localhost_port="8888"
 start_obfs5_port="9876"
 num_obfs5_instances="10"
 dest="192.168.0.6"
@@ -13,7 +13,7 @@ while getopts ":hb:p:d:n:P:c:" opt; do
     case ${opt} in
         h ) # process option h
             echo "Usage:"
-            echo "  run-server-pt-proxy.sh -P PT_PROXY_PATH -c OBFS5_CLIENT_PATH -n NUM_OBFS5_INSTANCES -b LOCALHOST_START_PORT -p OBFS5_START_PORT -d DEST"
+            echo "  run-server-pt-proxy.sh -P PT_PROXY_PATH -c OBFS5_CLIENT_PATH -n NUM_OBFS5_INSTANCES -b LOCALHOST_PORT -p OBFS5_START_PORT -d DEST"
             exit 0
             ;;
         P )
@@ -29,7 +29,7 @@ while getopts ":hb:p:d:n:P:c:" opt; do
             dest=$OPTARG
             ;;
         b )
-            start_localhost_port=$OPTARG
+            localhost_port=$OPTARG
             ;;
         p )
             start_obfs5_port=$OPTARG
@@ -42,7 +42,7 @@ while getopts ":hb:p:d:n:P:c:" opt; do
 done
 
 echo "number of obfs5 instances = ${num_obfs5_instances}"
-echo "localhost bind port start = ${start_localhost_port}"
+echo "localhost bind port start = ${localhost_port}"
 echo "obfs5 port start = ${start_obfs5_port}"
 echo "destination = ${dest}"
 
@@ -52,10 +52,9 @@ do
     log_file="log_obfs5_${i}.log"
 
     let server_port=$i+$start_obfs5_port
-    let local_port=$i+$start_localhost_port
 
     echo "Starting up pt-proxy instance ${i}..."
-    python ${pt_proxy} -t obfs5 -l ${log_file} -d ${state_dir} -b ${obfs5_client} server -S ${dest}:${server_port} -p ${local_port} &
+    python ${pt_proxy} -t obfs5 -l ${log_file} -d ${state_dir} -b ${obfs5_client} server -S ${dest}:${server_port} -p ${localhost_port} &
 done
 
 # next, print out the bridge lines
