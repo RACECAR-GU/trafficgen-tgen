@@ -135,7 +135,7 @@ to use the number of available processor cores""",
     analyze_parser.add_argument('-e', '--expression',
         help="""Append a regex PATTERN to a custom list of strings used with
 re.search to find log file names in the search path. The custom list of patterns
-will override the default pattern 'tgen.*\.log'.""",
+will override the default pattern 'tgen[^/]*\.log$'.""",
         metavar="PATTERN", type=str,
         action="append", dest="patterns",
         default=[])
@@ -182,7 +182,7 @@ will override the default pattern 'tgen.*\.log'.""",
                 matplotlib's plot command (see matplotlib.pyplot.plot)""",
         metavar="LIST", type=str,
         action="store", dest="lineformats",
-        default=util.LINEFORMATS)
+        default=util.LINE_FORMATS)
 
     visualize_parser.add_argument('-e', '--expression',
         help="""Append a regex PATTERN to a custom list of strings used with
@@ -191,6 +191,18 @@ By default, results from all hosts in the analysis file will get plotted.""",
         metavar="PATTERN", type=str,
         action="append", dest="hostpatterns",
         default=[])
+
+    visualize_parser.add_argument('--pngs',
+        help="""Save individual plot images in png format.""",
+        action="store_true",
+        dest="plot_pngs",
+        default=False)
+
+    visualize_parser.add_argument('--pdfs',
+        help="""Save individual plot images in pdf format.""",
+        action="store_true",
+        dest="plot_pdfs",
+        default=False)
 
     # edit
     edit_parser = sub_parser.add_parser('edit', description=DESC_EDIT, help=HELP_EDIT,
@@ -248,7 +260,7 @@ By default, results from all hosts in the analysis file will get plotted.""",
 def analyze(args):
     from tgentools.analysis import ParallelAnalysis, SerialAnalysis
 
-    searchexp = args.patterns if len(args.patterns) > 0 else ["tgen.*\.log"]
+    searchexp = args.patterns if len(args.patterns) > 0 else ["tgen[^/]*\.log$"]
 
     paths = []
     if os.path.isdir(args.tgen_path):
@@ -274,11 +286,11 @@ def analyze(args):
         analysis = ParallelAnalysis(nickname=args.nickname, ip_address=args.ip_address)
         analysis.analyze(paths, do_complete=args.do_complete, date_filter=args.date_filter,
             num_subprocs=min(args.nprocesses, len(paths)))
+        analysis.save(output_prefix=args.prefix, do_compress=True, xz_nthreads=args.nprocesses)
     else:
         analysis = SerialAnalysis(nickname=args.nickname, ip_address=args.ip_address)
         analysis.analyze(paths, do_complete=args.do_complete, date_filter=args.date_filter)
-
-    analysis.save(output_prefix=args.prefix)
+        analysis.save(output_prefix=args.prefix, do_compress=True, xz_nthreads=1)
 
 def visualize(args):
     from tgentools.visualization import TGenVisualization
@@ -287,7 +299,13 @@ def visualize(args):
     lflist = args.lineformats.strip().split(",")
     lfcycle = cycle(lflist)
 
-    tgen_viz = TGenVisualization(args.hostpatterns, args.do_bytes, args.do_heartbeat_cdfs, args.do_stats)
+    tgen_viz = TGenVisualization(args.hostpatterns,
+        args.do_bytes,
+        args.do_heartbeat_cdfs,
+        args.do_stats,
+        args.plot_pngs,
+        args.plot_pdfs,
+        args.prefix)
 
     for (path, label) in args.datasets:
         nextformat = next(lfcycle)
@@ -296,7 +314,7 @@ def visualize(args):
         if anal is not None:
             tgen_viz.add_dataset(anal, label, nextformat)
 
-    tgen_viz.plot_all(args.prefix)
+    tgen_viz.plot_all()
 
 def edit(args):
     if args.action_pattern is None and \

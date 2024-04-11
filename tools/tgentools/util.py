@@ -14,7 +14,12 @@ try:
 except ImportError:
     from io import StringIO
 
-LINEFORMATS = "k-,r-,b-,g-,c-,m-,y-,k--,r--,b--,g--,c--,m--,y--,k:,r:,b:,g:,c:,m:,y:,k-.,r-.,b-.,g-.,c-.,m-.,y-."
+LINE_COLORS = ['k', 'r', 'b', 'g', 'c', 'm', 'y']
+LINE_STYLES = ['-', '--', '-.', ':']
+
+# since there are 7 colors and 4 styles (no common factor), there will be 28
+# distinct color/style combinations before it repeats
+LINE_FORMATS = ','.join([x[0] + x[1] for x in zip(LINE_COLORS*10, LINE_STYLES*10)])
 
 def make_dir_path(path):
     p = os.path.abspath(os.path.expanduser(path))
@@ -29,9 +34,10 @@ def find_file_paths(searchpath, patterns):
             for name in files:
                 found = False
                 fpath = os.path.join(root, name)
-                fbase = os.path.basename(fpath)
+                # search only the relative path + filename (relative to the original search path)
+                frelpath = os.path.relpath(fpath, searchpath)
                 for pattern in patterns:
-                    if re.search(pattern, fbase): found = True
+                    if re.search(pattern, frelpath): found = True
                 if found: paths.append(fpath)
     return paths
 
@@ -196,10 +202,11 @@ class Writable(object):
 
 class FileWritable(Writable):
 
-    def __init__(self, filename, do_compress=False, do_truncate=False):
+    def __init__(self, filename, do_compress=False, do_truncate=False, xz_nthreads=3):
         self.filename = filename
         self.do_compress = do_compress
         self.do_truncate = do_truncate
+        self.xz_nthreads = xz_nthreads
         self.file = None
         self.xzproc = None
         self.ddproc = None
@@ -225,7 +232,7 @@ class FileWritable(Writable):
 
     def __open_nolock(self):
         if self.do_compress:
-            self.xzproc = Popen("xz --threads=3 -".split(), stdin=PIPE, stdout=PIPE)
+            self.xzproc = Popen(f"xz --threads={self.xz_nthreads} -".split(), stdin=PIPE, stdout=PIPE)
             dd_cmd = "dd of={0}".format(self.filename)
             # # note: its probably not a good idea to append to finalized compressed files
             # if not self.do_truncate: dd_cmd += " oflag=append conv=notrunc"

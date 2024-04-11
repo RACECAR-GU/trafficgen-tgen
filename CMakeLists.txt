@@ -10,11 +10,23 @@ endif()
 ## cmake module path is used for both main and tests
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/" ${CMAKE_MODULE_PATH})
 
+include(FindPkgConfig)
+
 ## dependencies
 find_package(RT REQUIRED)
 find_package(M REQUIRED)
-find_package(IGRAPH REQUIRED)
-find_package(GLIB REQUIRED)
+
+pkg_check_modules(IGRAPH REQUIRED igraph)
+pkg_check_modules(GLIB REQUIRED glib-2.0)
+
+## Parse out igraph version. Needed to work around breaking API changes in igraph.
+string(REPLACE "." ";" IGRAPH_VERSION_LIST ${IGRAPH_VERSION})
+list(GET IGRAPH_VERSION_LIST 0 IGRAPH_VERSION_MAJOR)
+list(GET IGRAPH_VERSION_LIST 1 IGRAPH_VERSION_MINOR)
+list(GET IGRAPH_VERSION_LIST 2 IGRAPH_VERSION_PATCH)
+add_definitions(-DIGRAPH_VERSION_MAJOR=${IGRAPH_VERSION_MAJOR})
+add_definitions(-DIGRAPH_VERSION_MINOR=${IGRAPH_VERSION_MINOR})
+add_definitions(-DIGRAPH_VERSION_PATCH=${IGRAPH_VERSION_PATCH})
 
 ## recurse our project tree
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/)

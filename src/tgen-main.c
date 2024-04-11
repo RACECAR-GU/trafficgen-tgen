@@ -10,6 +10,7 @@
 #include <igraph.h>
 
 #include "tgen.h"
+#include "tgen-igraph-compat.h"
 
 static void _tgenmain_cleanup(gint status, gpointer arg) {
     if(arg) {
@@ -27,6 +28,12 @@ static gint _tgenmain_returnError(gint flushLogCache) {
 }
 
 static gint _tgenmain_run(gint argc, gchar *argv[]) {
+    /* We generally use glib's random number generation, but in the past subtle
+     * bugs have snuck in from using libc's random number generation without
+     * seeding it. Defensively seed it here. (glib's is always seeded from an
+     * appropriate source of entropy) */
+    srand(g_random_int());
+
     /* get our hostname for logging */
     gchar hostname[128] = {0};
     tgenconfig_gethostname(hostname, 128);
@@ -75,6 +82,9 @@ static gint _tgenmain_run(gint argc, gchar *argv[]) {
     } else {
         tgen_message("Set SIG_IGN for signal SIGPIPE");
     }
+
+    /* use the built-in C attribute handler. this is set once and then left alone. */
+    igraph_set_attribute_table(&igraph_cattribute_table);
 
     /* parse the config file */
     TGenGraph* graph = tgengraph_new(argv[1]);

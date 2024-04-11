@@ -19,7 +19,7 @@ typedef enum {
 typedef enum {
     TGEN_XPORT_ERR_NONE, TGEN_XPORT_ERR_CONNECT,
     TGEN_XPORT_ERR_PROXY_CHOICE, TGEN_XPORT_ERR_PROXY_AUTH,
-    TGEN_XPORT_ERR_PROXY_RECONN, TGEN_XPORT_ERR_PROXY_ADDR,
+    TGEN_XPORT_ERR_PROXY_ADDR,
     TGEN_XPORT_ERR_PROXY_VERSION, TGEN_XPORT_ERR_PROXY_STATUS,
     TGEN_XPORT_ERR_WRITE, TGEN_XPORT_ERR_READ, TGEN_XPORT_ERR_MISC,
     TGEN_XPORT_ERR_STALLOUT, TGEN_XPORT_ERR_TIMEOUT
@@ -124,9 +124,6 @@ static const gchar* _tgentransport_errorToString(TGenTransportError error) {
         }
         case TGEN_XPORT_ERR_PROXY_AUTH: {
             return "AUTH";
-        }
-        case TGEN_XPORT_ERR_PROXY_RECONN: {
-            return "RECONN";
         }
         case TGEN_XPORT_ERR_PROXY_ADDR: {
             return "ADDR";
@@ -697,11 +694,11 @@ static TGenEvent _tgentransport_sendSocksAuth(TGenTransport* transport) {
 
         gchar buffer[255+255+3] = {0};
 
-        g_memmove(&buffer[0], "\x01", 1);
-        g_memmove(&buffer[1], &userlen, 1);
-        g_memmove(&buffer[2], user, userlen);
-        g_memmove(&buffer[2+userlen], &passlen, 1);
-        g_memmove(&buffer[3+userlen], pass, passlen);
+        memmove(&buffer[0], "\x01", 1);
+        memmove(&buffer[1], &userlen, 1);
+        memmove(&buffer[2], user, userlen);
+        memmove(&buffer[2+userlen], &passlen, 1);
+        memmove(&buffer[3+userlen], pass, passlen);
 
         /* use g_string_new_len to make sure the NULL gets written */
         transport->socksBuffer = g_string_new_len(&buffer[0], (gssize)3+userlen+passlen);
@@ -761,22 +758,22 @@ static TGenEvent _tgentransport_receiveSocksAuth(TGenTransport* transport) {
         return TGEN_EVENT_READ;
     } else {
         /* we read it all, we can move on */
-        gboolean versionMatch = (transport->socksBuffer->str[0] == 0x01) ? TRUE : FALSE;
+        int version = transport->socksBuffer->str[0];
+        gboolean versionMatch = (version == 0x01) ? TRUE : FALSE;
         gboolean authSuccess = (transport->socksBuffer->str[1] == 0x00) ? TRUE : FALSE;
 
         g_string_free(transport->socksBuffer, TRUE);
         transport->socksBuffer = NULL;
 
-        if(authSuccess) {
-            tgen_info("socks server %s authentication succeeded with username='%s' and password='%s'",
-                    tgenpeer_toString(transport->proxy),
-                    transport->username ? transport->username : "",
-                    transport->password ? transport->password : "");
+        if (!versionMatch) {
+            tgen_warning("socks server %s returned unexpected version %d", 
+                    tgenpeer_toString(transport->proxy), version);
+            _tgentransport_changeState(transport, TGEN_XPORT_ERROR);
+            _tgentransport_changeError(transport, TGEN_XPORT_ERR_PROXY_VERSION);
+            return TGEN_EVENT_NONE;
+        }
 
-            /* now we can move on to the request */
-            _tgentransport_changeState(transport, TGEN_XPORT_PROXY_REQUEST);
-            return TGEN_EVENT_WRITE;
-        } else {
+        if (!authSuccess){
             tgen_warning("socks server %s authentication failed with username='%s' and password='%s'",
                     tgenpeer_toString(transport->proxy),
                     transport->username ? transport->username : "",
@@ -786,6 +783,15 @@ static TGenEvent _tgentransport_receiveSocksAuth(TGenTransport* transport) {
             _tgentransport_changeError(transport, TGEN_XPORT_ERR_PROXY_AUTH);
             return TGEN_EVENT_NONE;
         }
+
+        tgen_info("socks server %s authentication succeeded with username='%s' and password='%s'",
+                tgenpeer_toString(transport->proxy),
+                transport->username ? transport->username : "",
+                transport->password ? transport->password : "");
+
+        /* now we can move on to the request */
+        _tgentransport_changeState(transport, TGEN_XPORT_PROXY_REQUEST);
+        return TGEN_EVENT_WRITE;
     }
 }
 
@@ -820,7 +826,7 @@ static TGenEvent _tgentransport_sendSocksRequest(TGenTransport* transport) {
             guint8 guint8max = -1;
             if(nameLength > guint8max) {
                 nameLength = (glong)guint8max;
-                tgen_warning("truncated name '%s' in socks request from %i to %u bytes",
+                tgen_warning("truncated name '%s' in socks request from %ld to %u bytes",
                         name, nameLength, (guint)guint8max);
             }
 
@@ -829,10 +835,10 @@ static TGenEvent _tgentransport_sendSocksRequest(TGenTransport* transport) {
             gchar buffer[nameLength+8];
             memset(buffer, 0, nameLength+8);
 
-            g_memmove(&buffer[0], "\x05\x01\x00\x03", 4);
-            g_memmove(&buffer[4], &nameLength, 1);
-            g_memmove(&buffer[5], name, nameLength);
-            g_memmove(&buffer[5+nameLength], &port, 2);
+            memmove(&buffer[0], "\x05\x01\x00\x03", 4);
+            memmove(&buffer[4], &nameLength, 1);
+            memmove(&buffer[5], name, nameLength);
+            memmove(&buffer[5+nameLength], &port, 2);
 
             /* use g_string_new_len to make sure the NULL gets written */
             transport->socksBuffer = g_string_new_len(&buffer[0], nameLength+7);
@@ -845,9 +851,9 @@ static TGenEvent _tgentransport_sendSocksRequest(TGenTransport* transport) {
 
             gchar buffer[16] = {0};
 
-            g_memmove(&buffer[0], "\x05\x01\x00\x01", 4);
-            g_memmove(&buffer[4], &ip, 4);
-            g_memmove(&buffer[8], &port, 2);
+            memmove(&buffer[0], "\x05\x01\x00\x01", 4);
+            memmove(&buffer[4], &ip, 4);
+            memmove(&buffer[8], &port, 2);
 
             transport->socksBuffer = g_string_new_len(&buffer[0], 10);
             g_assert(transport->socksBuffer->len == 10);
@@ -890,7 +896,7 @@ static TGenEvent _tgentransport_sendSocksRequest(TGenTransport* transport) {
 static TGenEvent _tgentransport_receiveSocksResponseTypeName(TGenTransport* transport) {
     /* case 4b - domain name mode */
     guint8 nameLength = 0;
-    g_memmove(&nameLength, &transport->socksBuffer->str[0], 1);
+    memmove(&nameLength, &transport->socksBuffer->str[0], 1);
 
     /* len is left over from prev read - now we want to read the name+port so
      * that we have the full len+name+port */
@@ -908,30 +914,23 @@ static TGenEvent _tgentransport_receiveSocksResponseTypeName(TGenTransport* tran
         memset(namebuf, 0, nameLength+1);
         in_port_t socksBindPort = 0;
 
-        g_memmove(namebuf, &transport->socksBuffer->str[1], nameLength);
-        g_memmove(&socksBindPort, &transport->socksBuffer->str[1+nameLength], 2);
+        memmove(namebuf, &transport->socksBuffer->str[1], nameLength);
+        memmove(&socksBindPort, &transport->socksBuffer->str[1+nameLength], 2);
 
         g_string_free(transport->socksBuffer, TRUE);
         transport->socksBuffer = NULL;
 
-        if(!g_ascii_strncasecmp(namebuf, "\0", (gsize) 1) && socksBindPort == 0) {
-            tgen_info("connection from %s through socks proxy %s to %s successful",
-                    tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote));
+        /* Since we sent a CONNECT request, the response name and port are mostly informational
+         * and can just be logged and ignored. */
+        tgen_debug("received socks response with name='%s' and port=%u", namebuf, (guint)ntohs(socksBindPort));
 
-            transport->time.proxyResponse = g_get_monotonic_time();
-            transport->time.lastProgress = transport->time.proxyResponse;
-            _tgentransport_changeState(transport, TGEN_XPORT_SUCCESSOPEN);
-            return TGEN_EVENT_DONE;
-        } else {
-            tgen_warning("connection from %s through socks proxy %s to %s failed: "
-                    "proxy requested unsupported reconnection to %s:u",
-                    tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote),
-                    namebuf, (guint)ntohs(socksBindPort));
+        tgen_info("connection from %s through socks proxy %s to %s successful",
+                tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote));
 
-            _tgentransport_changeState(transport, TGEN_XPORT_ERROR);
-            _tgentransport_changeError(transport, TGEN_XPORT_ERR_PROXY_RECONN);
-            return TGEN_EVENT_NONE;
-        }
+        transport->time.proxyResponse = g_get_monotonic_time();
+        transport->time.lastProgress = transport->time.proxyResponse;
+        _tgentransport_changeState(transport, TGEN_XPORT_SUCCESSOPEN);
+        return TGEN_EVENT_DONE;
     }
 }
 
@@ -967,31 +966,25 @@ static TGenEvent _tgentransport_receiveSocksResponseTypeIPv4(TGenTransport* tran
         /* check if they want us to connect elsewhere */
         in_addr_t socksBindAddress = 0;
         in_port_t socksBindPort = 0;
-        g_memmove(&socksBindAddress, &transport->socksBuffer->str[0], 4);
-        g_memmove(&socksBindPort, &transport->socksBuffer->str[4], 2);
+        memmove(&socksBindAddress, &transport->socksBuffer->str[0], 4);
+        memmove(&socksBindPort, &transport->socksBuffer->str[4], 2);
 
         g_string_free(transport->socksBuffer, TRUE);
         transport->socksBuffer = NULL;
 
-        /* reconnect not supported */
-        if(socksBindAddress == 0 && socksBindPort == 0) {
-            tgen_info("connection from %s through socks proxy %s to %s successful",
-                    tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote));
+        /* Since we sent a CONNECT request, the response name and port are mostly informational and
+         * can just be logged and ignored. */
+        gchar socksBindAddrStr[INET_ADDRSTRLEN + 1] = {0};
+        inet_ntop(AF_INET, &socksBindAddress, socksBindAddrStr, INET_ADDRSTRLEN);
+        tgen_debug("received socks response with addr=%s and port=%u", socksBindAddrStr, (guint)ntohs(socksBindPort));
 
-            transport->time.proxyResponse = g_get_monotonic_time();
-            transport->time.lastProgress = transport->time.proxyResponse;
-            _tgentransport_changeState(transport, TGEN_XPORT_SUCCESSOPEN);
-            return TGEN_EVENT_DONE;
-        } else {
-            tgen_warning("connection from %s through socks proxy %s to %s failed: "
-                    "proxy requested unsupported reconnection to %i:u",
-                    tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote),
-                    (gint)socksBindAddress, (guint)ntohs(socksBindPort));
+        tgen_info("connection from %s through socks proxy %s to %s successful",
+                tgenpeer_toString(transport->local), tgenpeer_toString(transport->proxy), tgenpeer_toString(transport->remote));
 
-            _tgentransport_changeState(transport, TGEN_XPORT_ERROR);
-            _tgentransport_changeError(transport, TGEN_XPORT_ERR_PROXY_RECONN);
-            return TGEN_EVENT_NONE;
-        }
+        transport->time.proxyResponse = g_get_monotonic_time();
+        transport->time.lastProgress = transport->time.proxyResponse;
+        _tgentransport_changeState(transport, TGEN_XPORT_SUCCESSOPEN);
+        return TGEN_EVENT_DONE;
     }
 }
 
@@ -1007,6 +1000,7 @@ static TGenEvent _tgentransport_receiveSocksResponseType(TGenTransport* transpor
         return TGEN_EVENT_READ;
     } else {
         gchar reserved = transport->socksBuffer->str[0];
+        (void)reserved;
         gchar addressType = transport->socksBuffer->str[1];
 
         g_string_free(transport->socksBuffer, TRUE);
@@ -1062,7 +1056,7 @@ static TGenEvent _tgentransport_receiveSocksResponseStatus(TGenTransport* transp
         return TGEN_EVENT_READ;
     } else {
         gchar version = transport->socksBuffer->str[0];
-        gchar status = transport->socksBuffer->str[1];
+        guchar status = transport->socksBuffer->str[1];
 
         g_string_free(transport->socksBuffer, TRUE);
         transport->socksBuffer = NULL;
@@ -1087,7 +1081,10 @@ static TGenEvent _tgentransport_receiveSocksResponseStatus(TGenTransport* transp
                 g_string_append_printf(messageBuffer, "our request was not granted by "
                         "the SOCKS server: error status %X: ", status);
 
-                /* error codes: https://en.wikipedia.org/wiki/SOCKS#SOCKS5 */
+                /* error codes: https://en.wikipedia.org/wiki/SOCKS#SOCKS5
+                 * we also include non-standard tor error codes (enabled with the 'ExtendedErrors'
+                 * torrc flag), which could potentially have different meanings for non-tor
+                 * proxies */
                 switch(status) {
                     case 0x01: {
                         g_string_append_printf(messageBuffer, "general failure");
@@ -1119,6 +1116,38 @@ static TGenEvent _tgentransport_receiveSocksResponseStatus(TGenTransport* transp
                     }
                     case 0x08: {
                         g_string_append_printf(messageBuffer, "address type not supported");
+                        break;
+                    }
+                    case 0xF0: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service descriptor can not be found");
+                        break;
+                    }
+                    case 0xF1: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service descriptor is invalid");
+                        break;
+                    }
+                    case 0xF2: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service introduction failed");
+                        break;
+                    }
+                    case 0xF3: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service rendezvous failed");
+                        break;
+                    }
+                    case 0xF4: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service missing client authorization");
+                        break;
+                    }
+                    case 0xF5: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service wrong client authorization");
+                        break;
+                    }
+                    case 0xF6: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service invalid address");
+                        break;
+                    }
+                    case 0xF7: {
+                        g_string_append_printf(messageBuffer, "(tor) onion service introduction timed out");
                         break;
                     }
                     default: {

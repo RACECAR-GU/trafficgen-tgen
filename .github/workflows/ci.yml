@@ -2,6 +2,11 @@
 # https://help.github.com/en/actions/automating-your-workflow-with-github-actions/workflow-syntax-for-github-actions
 
 name: Tests
+permissions: read-all
+
+defaults:
+  run:
+    shell: bash
 
 on:
   push:
@@ -9,28 +14,79 @@ on:
       - '**.md'
       - 'LICENSE'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
+
+env:
+  DEBIAN_FRONTEND: noninteractive
 
 jobs:
   testing:
     runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.container }}
     strategy:
       matrix:
         cc: ['gcc', 'clang']
+        container:
+          # We generally try to support the same set of platforms as shadow does.
+          # See https://shadow.github.io/docs/guide/supported_platforms.html
+          - 'ubuntu:20.04'
+          - 'ubuntu:22.04'
+          - 'debian:10-slim'
+          - 'debian:11-slim'
+          - 'debian:12-slim'
+          - 'fedora:37'
     steps:
       - name: Update packages
-        run: sudo apt-get update
+        run: |
+          case ${{ matrix.container }} in
+            ubuntu* | debian*)
+            apt-get update
+            ;;
+          esac
 
       - name: Checkout
         uses: actions/checkout@v2
 
       - name: Install tgen dependencies
-        run: sudo apt-get install -y ${{ matrix.cc }} cmake libglib2.0-0 libglib2.0-dev libigraph0v5 libigraph0-dev
+        run: |
+          case ${{ matrix.container }} in
+            ubuntu*)
+              apt-get install -y \
+                ${{ matrix.cc }} \
+                cmake \
+                libglib2.0-dev \
+                libigraph-dev
+              ;;
+            debian*)
+              apt-get install -y \
+                ${{ matrix.cc }} \
+                cmake \
+                libglib2.0-dev \
+                libigraph-dev
+              ;;
+            fedora*)
+              dnf install -y \
+                ${{ matrix.cc }} \
+                cmake \
+                glib2-devel \
+                igraph-devel
+              ;;
+            *)
+              echo "Unhandled container ${{ matrix.container }}"
+              exit 1
+          esac
 
       - name: Build tgen
-        run: mkdir -p build && cd build && CC=${{ matrix.cc }} cmake .. && make
+        run: mkdir -p build && cd build && CC=${{ matrix.cc }} cmake -DCMAKE_C_FLAGS="-Wall -Werror" .. && make
+
+      - name: Install test dependencies
+        run: |
+          case ${{ matrix.container }} in
+            fedora* | *centos*)
+              dnf install -y \
+                diffutils
+              ;;
+          esac
 
       - name: Test mmodel
         run: bash test/run_mmodel_tests.sh
@@ -39,10 +95,87 @@ jobs:
         run: bash test/run_tgen_integration_tests.sh
 
       - name: Install tgentools dependencies
-        run: sudo apt install -y python3 python3-dev python3-pip python3-venv libxml2 libxml2-dev libxslt1.1 libxslt1-dev libpng16-16 libpng-dev libfreetype6 libfreetype6-dev libblas-dev liblapack-dev
+        run: |
+          case ${{ matrix.container }} in
+            ubuntu* | debian*)
+              apt install -y \
+                gfortran \
+                python3 \
+                python3-dev \
+                python3-pip \
+                python3-venv \
+                libjpeg-dev \
+                libxml2 \
+                libxml2-dev \
+                libxslt1.1 \
+                libxslt1-dev \
+                libpng16-16 \
+                libpng-dev \
+                libfreetype6 \
+                libfreetype6-dev \
+                libblas-dev \
+                liblapack-dev 
+              ;;
+            fedora*)
+              dnf install -y \
+                cmake \
+                glib2-devel \
+                libdeflate \
+                python3 \
+                python3-pip \
+                xz
+              pip3 install virtualenv
+              ;;
+            *centos*)
+              dnf install -y \
+                cmake \
+                glib2-devel \
+                libjpeg-turbo-devel \
+                platform-python-devel \
+                python3 \
+                python3-pip \
+                xz \
+                zlib-devel
+
+              pip3 install virtualenv
+              ;;
+            *)
+              echo "Unhandled container ${{ matrix.container }}"
+              exit 1
+          esac
 
       - name: Build tgentools
-        run: python3 -m venv build/toolsenv && source build/toolsenv/bin/activate && pip3 install -r tools/requirements.txt && pip3 install -I tools/
+        run: |
+          python3 -m venv build/toolsenv
+          source build/toolsenv/bin/activate
+          # Drastically improves time to install requirements on platforms with
+          # older pip in system packages, such as debian-10.
+          pip3 install --upgrade pip
+
+          pip3 install -r tools/requirements.txt
+          pip3 install -I tools/
 
       - name: Test tgentools
         run: bash test/run_tgentools_integration_tests.sh
+
+  test-nix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v15
+
+      # Not strictly required as a separate step, since `check` already builds
+      # if needed. Might be easier to debug as a distinct step, though.
+      - name: Build tgen
+        run: nix --print-build-logs build .#tgen
+
+      # Not strictly required as a separate step, since `check` already builds
+      # if needed. Might be easier to debug as a distinct step, though.
+      - name: Build tgentools
+        run: nix --print-build-logs build .#tgentools
+
+      - name: Test
+        run: nix --print-build-logs flake check

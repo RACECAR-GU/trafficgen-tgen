@@ -17,18 +17,24 @@ and to monitor Tor performance in [OnionPerf](https://gitweb.torproject.org/onio
 
 ## Setup
 
+Dependencies:
+
+- CMake
+- GLib 2.0
+- IGraph
+
 Dependencies in Fedora/RedHat:
 
-    sudo yum install cmake glib2 glib2-devel igraph igraph-devel
+    sudo yum install cmake glib2-devel igraph-devel
 
 Dependencies in Ubuntu/Debian:
 
-    sudo apt-get install cmake libglib2.0-0 libglib2.0-dev libigraph0v5 libigraph0-dev
+    sudo apt-get install cmake libglib2.0-dev libigraph-dev
 
 Build with a custom install prefix:
 
     mkdir build && cd build
-    cmake .. -DCMAKE_INSTALL_PREFIX=/home/$USER/.local
+    cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local
     make
 
 Optionally install to the prefix:
@@ -50,7 +56,7 @@ See the [resource/](resource) directory for example config files.
 
 ## More documentation
 
-See [tools/README](tools/README) for setup instructions for
+See [tools/README.md](tools/README.md) for setup instructions for
 the TGenTools toolkit that can be used to parse and plot `tgen` log output.
 
 See [doc/TGen-Overview.md](doc/TGen-Overview.md) for an overview of how to use

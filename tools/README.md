@@ -33,8 +33,8 @@ Install into the virtual environment:
 
 Or build/install locally (outside of the virtual environment):
 
-   python3 setup.py build
-   python3 setup.py install
+    python3 setup.py build
+    python3 setup.py install
 
 ## Run TGenTools
 
@@ -58,7 +58,7 @@ called `tgen.client.log`, you can then parse the log file like this:
     tgentools parse tgen.client.log
 
 This produces the `tgen.analysis.json.xz` file, the format of which is
-outlined in [doc/Tools-JSON-Format.md](Tools-JSON-Format.md).
+outlined in [Tools-JSON-Format.md](/doc/Tools-JSON-Format.md).
 The analysis file can be plotted:
 
     tgentools plot --data tgen.analysis.json.xz "tgen-test"
